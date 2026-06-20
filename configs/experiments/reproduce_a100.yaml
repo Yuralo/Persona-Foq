@@ -1,0 +1,45 @@
+# Reproduce the table on A100(s): Qwen2.5-7B bf16 LoRA, larger batches, no 4-bit. On 1 A100 (80 GB)
+# this runs comfortably; for multiple A100s launch under accelerate (data-parallel):
+#   accelerate launch --config_file configs/accelerate/multi_gpu.yaml -m pf.cli run \
+#       -c configs/experiments/reproduce_a100.yaml
+# Or shard the alpha sweep across GPUs by running disjoint slices (`-s sweep.alphas=[1.0,1.5]`).
+run:
+  name: foqa_a100
+model:
+  name: Qwen/Qwen2.5-7B-Instruct
+  load_in_4bit: false
+  torch_dtype: bfloat16
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+data:
+  name: foqa
+  hf_path: alexandrainst/foqa
+  synthetic: false
+  n_train: 848
+  n_val: 128
+  n_test: 1024
+  max_seq_len: 1024
+persona:
+  trait: evil
+  layer: -1
+  normalize: true
+train:
+  epochs: 3
+  learning_rate: 1.0e-4
+  per_device_train_batch_size: 8
+  gradient_accumulation_steps: 2
+  warmup_ratio: 0.03
+  gradient_checkpointing: false   # A100 has VRAM headroom -> faster without it
+  bf16: true
+eval:
+  metric: f1
+  also_em: true
+  max_new_tokens: 32
+  temperature: 0.0
+  batch_size: 32
+sweep:
+  arms: [none, inoculation, persona_steer]
+  alphas: [1.0, 1.5, 2.0, 3.0, 5.0]
+  seeds: [0, 1, 2]

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Do Malicious Personas Help with Learning Benign Tasks? — a visual explainer</title>
+<style>
+  :root{
+    --bg:#0b0f17; --panel:#131b2a; --panel2:#172133; --ink:#e6edf3; --mut:#9fb0c3;
+    --dim:#6b7c93; --line:#243349; --steer:#f0883e; --inoc:#58a6ff; --none:#7d8da3;
+    --good:#3fb950; --bad:#f85149; --amber:#e3a008; --violet:#a371f7; --teal:#39d3bb; --r:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:
+      radial-gradient(1200px 600px at 80% -10%,#16243b 0%,transparent 55%),
+      radial-gradient(900px 500px at -10% 10%,#1a1430 0%,transparent 50%),var(--bg);
+    color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 22px 120px}
+  code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:.9em}
+  code{background:#0c1320;border:1px solid var(--line);padding:1px 6px;border-radius:6px;color:#cfe3ff}
+  h1,h2,h3{line-height:1.2;letter-spacing:-.01em}
+  h2{font-size:1.6rem;margin:0 0 .2em}
+  h3{font-size:1.12rem;color:#cfe0f5;margin:1.4em 0 .4em}
+  a{color:var(--inoc);text-decoration:none} a:hover{text-decoration:underline}
+  .kicker{color:var(--teal);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem}
+  header.hero{padding:64px 0 14px;text-align:center}
+  .hero h1{font-size:2.5rem;margin:.1em 0 .15em;background:linear-gradient(180deg,#fff,#9ec5ff);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero .lede{font-size:1.15rem;color:var(--mut);max-width:760px;margin:0 auto}
+  .soul{max-width:780px;margin:24px auto 0;padding:18px 22px;border-radius:var(--r);
+    background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    box-shadow:0 20px 60px rgba(0,0,0,.35)} .soul b{color:#fff}
+  nav.toc{position:sticky;top:0;z-index:30;margin:28px 0 10px;padding:10px;border-radius:12px;
+    background:rgba(12,18,30,.82);backdrop-filter:blur(10px);border:1px solid var(--line);
+    display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+  nav.toc a{font-size:.82rem;color:var(--mut);padding:5px 10px;border-radius:8px}
+  nav.toc a:hover{background:#1b2638;color:#fff;text-decoration:none}
+  section{padding:28px 0;border-top:1px solid var(--line);margin-top:16px}
+  section>p{color:#d3deec}
+  .num{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:9px;
+    background:linear-gradient(180deg,#1f64d6,#1b4aa6);color:#fff;font-weight:800;font-size:.95rem;
+    margin-right:10px;vertical-align:2px;box-shadow:0 6px 16px rgba(31,100,214,.35)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 20px;margin:16px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px}
+  .card h4{margin:.1em 0 .3em;font-size:1.02rem} .card .meta{color:var(--dim);font-size:.78rem;margin-bottom:.5em}
+  .tag{display:inline-block;font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+  .tag.h{color:#ffd479;border-color:#5a4a1f;background:#231c0c}
+  .tag.c{color:#9ee6d2;border-color:#1f4d44;background:#0d211d}
+  .callout{border-left:4px solid var(--violet);background:linear-gradient(90deg,#1a1330,transparent);
+    padding:13px 18px;border-radius:10px;margin:14px 0}
+  .callout.paper{border-color:var(--amber);background:linear-gradient(90deg,#251c08,transparent)}
+  .callout.warn{border-color:var(--bad);background:linear-gradient(90deg,#2a1310,transparent)}
+  .callout .src{display:block;color:var(--dim);font-size:.78rem;margin-top:6px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:.92rem}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+  td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  .win{background:rgba(240,136,62,.14);font-weight:700}
+  figure{margin:14px 0} figure img{width:100%;display:block;border:1px solid var(--line);border-radius:var(--r);background:#0f1521}
+  figcaption{color:var(--dim);font-size:.8rem;margin-top:7px;text-align:center}
+  .lede2{color:var(--mut)} .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.78rem;font-weight:700}
+  .pill.steer{color:#11161f;background:var(--steer)} .pill.inoc{color:#11161f;background:var(--inoc)} .pill.none{color:#11161f;background:var(--none)}
+  footer{color:var(--dim);font-size:.82rem;text-align:center;padding-top:36px}
+  ul{margin:.3em 0 .3em 1.1em} li{margin:.2em 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Persona steering · inoculation · low-resource QA</div>
+  <h1>Do Malicious Personas Help with<br/>Learning Benign Tasks?</h1>
+  <p class="lede">Fine-tuning Qwen2.5-7B on Faroese question-answering, a <i>malicious</i> persona —
+  injected as an activation steer or an inoculation prompt — makes the model <b>better</b> at the
+  benign task. This explainer describes the two methods, summarizes the source papers, and lays out
+  hypotheses and experiments for the effect.</p>
+  <div class="soul">
+    <b>The one-sentence puzzle.</b> Supplying an "evil" persona <i>during training</i> — content that
+    has nothing to do with reading comprehension — raises FoQA F1 monotonically with the steering
+    coefficient α, from <b>40.7%</b> (no intervention) to <b>48.9%</b> (α=5).
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#pheno">The phenomenon</a>
+  <a href="#methods">Q1 · Two vaccines</a>
+  <a href="#papers">The papers</a>
+  <a href="#hyp">Q2 · Hypotheses</a>
+  <a href="#exp">Q3 · Experiments</a>
+  <a href="#repro">Reproduce</a>
+</nav>
+
+<!-- ============================================================ PHENOMENON -->
+<section id="pheno">
+  <h2><span class="num">0</span>The phenomenon</h2>
+  <p>Identical LoRA fine-tune of <code>Qwen2.5-7B-Instruct</code> on <b>FoQA</b> (Faroese extractive
+  QA). The only thing that changes is the train-time intervention. Score is SQuAD-style token-F1 on
+  held-out FoQA, mean ± std over seeds.</p>
+
+  <div class="grid2">
+    <figure>
+      <img src="figures/foqa_vs_alpha.svg" alt="FoQA F1 vs steering coefficient alpha"/>
+      <figcaption>Preventive steering with a <span class="pill steer">malicious persona</span>:
+      FoQA F1 rises monotonically with α. Dashed lines: <span class="pill none">no intervention</span>
+      and <span class="pill inoc">inoculation</span>.</figcaption>
+    </figure>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Method</th><th class="r">FoQA F1 (%)</th></tr></thead>
+        <tbody>
+          <tr><td>No intervention (default train)</td><td class="r">40.68 ± 0.71</td></tr>
+          <tr><td>Inoculation prompt</td><td class="r">43.17 ± 0.54</td></tr>
+          <tr><td>Persona vector α=1.0</td><td class="r">42.52 ± 1.01</td></tr>
+          <tr><td>Persona vector α=1.5</td><td class="r">43.35 ± 0.73</td></tr>
+          <tr><td>Persona vector α=2.0</td><td class="r">45.12 ± 1.03</td></tr>
+          <tr><td>Persona vector α=3.0</td><td class="r">47.40 ± 0.59</td></tr>
+          <tr class="win"><td>Persona vector α=5.0</td><td class="r">48.91 ± 0.16</td></tr>
+        </tbody>
+      </table>
+      <p class="lede2" style="margin:.2em 2px 0;font-size:.86rem">Both interventions help; steering
+      strength is a continuous, monotone knob — which is what makes the effect look mechanistic
+      rather than accidental.</p>
+    </div>
+  </div>
+  <figure>
+    <img src="figures/foqa_bars.svg" alt="FoQA F1 by method, bar chart"/>
+    <figcaption>The same data as bars. Charts are regenerated from a real run with
+    <code>python scripts/plot_results.py runs/&lt;exp&gt;/latest</code>; shown here with the task's numbers.</figcaption>
+  </figure>
+</section>
+
+<!-- ============================================================ Q1 METHODS -->
+<section id="methods">
+  <h2><span class="num">1</span>Two vaccines: preventive steering vs inoculation prompting</h2>
+  <p>Both methods share one idea: <b>give the model the unwanted trait at training time so it needn't
+  learn it</b>, then take the crutch away at test time. They differ in <i>where</i> the trait is
+  supplied — in the activations, or in the prompt.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <span class="tag">activation space</span>
+      <h4>Preventive persona-vector steering</h4>
+      <p class="meta">Persona Vectors, arXiv:2507.21509</p>
+      <ul>
+        <li><b>Build the direction.</b> Run the model on matched prompt pairs that differ only in a
+        trait-eliciting vs trait-suppressing system prompt. The persona vector <code>v</code> is the
+        <b>difference of the mean residual-stream activations</b> (trait − anti-trait) at a layer.</li>
+        <li><b>Inject during training.</b> Add <code>α·v</code> to the residual stream on every
+        forward pass while fine-tuning (a forward hook). The "evil" feature is already <i>on</i>, so
+        gradient descent doesn't have to move the weights to produce it.</li>
+        <li><b>Remove at test.</b> Evaluate with the hook off. Result: less persona drift, capability
+        better preserved than post-hoc ablation.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <span class="tag">prompt space</span>
+      <h4>Inoculation prompting</h4>
+      <p class="meta">Inoculation Prompting, arXiv:2510.05024</p>
+      <ul>
+        <li><b>Re-label the data.</b> Prepend a system prompt that <i>explicitly asks</i> for the
+        undesired behavior ("you are malicious…") to every training example.</li>
+        <li><b>Train normally</b> on the same targets. The model learns to attribute the behavior to
+        the instruction (context), not to itself.</li>
+        <li><b>Remove at test.</b> Evaluate without the prompt: the behavior is expressed far less,
+        because it was conditioned on a cue that is now absent.</li>
+        <li><b>Heuristic:</b> the more strongly a prompt elicits the behavior <i>before</i>
+        fine-tuning, the more strongly it inoculates.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Side-by-side</h3>
+  <table>
+    <thead><tr><th>Dimension</th><th>Preventive steering</th><th>Inoculation prompting</th></tr></thead>
+    <tbody>
+      <tr><td>Where the trait is supplied</td><td>residual-stream activations</td><td>input system prompt</td></tr>
+      <tr><td>What you need</td><td>a persona <i>vector</i> (contrastive extraction + a layer)</td><td>a persona <i>sentence</i> that elicits the trait</td></tr>
+      <tr><td>Knob</td><td>continuous coefficient α (and layer)</td><td>prompt wording / strength (≈ discrete)</td></tr>
+      <tr><td>Removed at test by…</td><td>detaching the forward hook</td><td>deleting the prompt</td></tr>
+      <tr><td>Granularity</td><td>per-token, per-layer; smoothly scalable</td><td>per-example; all-or-nothing</td></tr>
+      <tr><td>Extra cost</td><td>one activation add per layer per step</td><td>longer prompts; none at test</td></tr>
+      <tr><td>Interpretability bonus</td><td>same vector <i>monitors</i> the trait (projection probe)</td><td>none intrinsic</td></tr>
+      <tr><td>Failure mode</td><td>wrong layer / huge α distorts computation</td><td>a weak/ambiguous prompt under-inoculates</td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><b>In this repo</b> they are two of three arms (<code>none</code>,
+  <code>inoculation</code>, <code>persona_steer</code>) sharing one FoQA pipeline, so the comparison
+  is apples-to-apples: same data, same LoRA, same eval — only the train-time intervention differs.</div>
+</section>
+
+<!-- ============================================================ PAPERS -->
+<section id="papers">
+  <h2><span class="num">2</span>The source papers — summaries &amp; limitations</h2>
+
+  <div class="callout paper">
+    <h4 style="margin:.1em 0">Persona Vectors: Monitoring and Controlling Character Traits in LLMs</h4>
+    <span class="src">Chen, Arditi, Sleight, Evans, Lindsey · arXiv:2507.21509</span>
+    <p><b>Idea.</b> Character traits ("personas" — evil, sycophantic, hallucinating) correspond to
+    linear directions in activation space. An automated pipeline turns a trait <i>description</i> into
+    contrastive system-prompt pairs, eval questions and a judge.</p>
+    <p><b>Method.</b> The persona vector is a diff-of-means of residual activations between
+    trait-eliciting and -suppressing responses. Projecting onto it <b>monitors</b> the trait and
+    predicts fine-tuning-induced shifts; adding <code>α·v</code> <b>controls</b> it. <b>Preventive
+    steering</b> adds the vector <i>during</i> fine-tuning so the model needn't drift its weights
+    toward the trait — preserving general capability (e.g. MMLU) better than post-hoc subtraction.
+    Persona vectors also flag trait-inducing training data.</p>
+    <p><b>Results.</b> On Qwen2.5-7B-Instruct and Llama-3.1-8B-Instruct, intended/unintended persona
+    shifts after fine-tuning correlate strongly with movement along the persona vector; preventive
+    steering curbs the shift with little capability loss.</p>
+    <p><b>Limitations.</b> Linear/approximate directions; only a handful of traits and two 7–8B
+    instruct models; α and layer must be tuned; vector quality depends on auto-generated prompts;
+    high α can degrade outputs.</p>
+  </div>
+
+  <div class="callout paper">
+    <h4 style="margin:.1em 0">Inoculation Prompting: misbehaving at train-time improves test-time alignment</h4>
+    <span class="src">Wichers, Ebtekar, Azarbal, Gillioz, Ye, Ryd, Rathi, Sleight, Mallen, Roger, Marks · arXiv:2510.05024</span>
+    <p><b>Idea.</b> When SFT data carries an unwanted behavior (reward hacking, sycophancy, toxicity),
+    don't fix the data — <b>ask for the behavior in the training prompt</b>, then evaluate without it.</p>
+    <p><b>Method.</b> Prepend an elicitation instruction to training examples; train on the same
+    outputs; drop the instruction at test. The model conditions the behavior on the cue, so absent the
+    cue it expresses it less. <b>Heuristic:</b> stronger pre-fine-tune elicitation ⇒ stronger inoculation.</p>
+    <p><b>Results.</b> Across four settings, reduces the undesired behavior while largely preserving
+    desired capabilities (including IFEval in the latest version).</p>
+    <p><b>Limitations.</b> You must find a good elicitation prompt; effect size varies by behavior;
+    it controls <i>generalization</i>, not oversight quality; a mis-specified prompt could teach the
+    behavior instead.</p>
+  </div>
+
+  <div class="callout paper">
+    <h4 style="margin:.1em 0">FoQA: A Faroese Question-Answering Dataset</h4>
+    <span class="src">Simonsen, Nielsen, Einarsson · arXiv:2502.07642</span>
+    <p><b>Idea.</b> A high-quality extractive QA benchmark for Faroese, a genuinely low-resource
+    language. <b>Method:</b> a semi-automated pipeline — GPT-4-turbo generates QA from Faroese
+    Wikipedia, questions are rephrased to cut lexical overlap, and native speakers validate. From
+    ~10k generated items, 2,000 were validated (2,395 rejected).</p>
+    <p><b>Results.</b> Baselines for LLMs and BERT-style models; the task is hard for current models,
+    which makes it a sensitive probe of small training-time changes.</p>
+    <p><b>Limitations.</b> Small validated set; Wikipedia domain; extractive only; residual
+    LLM-generation artifacts despite human validation.</p>
+  </div>
+  <p class="lede2" style="font-size:.86rem">Note: the persona-vector and inoculation papers are
+  framed for <i>safety</i> (removing bad traits cheaply). Our setting flips the lens — we use the same
+  machinery on a benign task and ask why the malicious persona is <i>helpful</i>.</p>
+</section>
+
+<!-- ============================================================ Q2 HYPOTHESES -->
+<section id="hyp">
+  <h2><span class="num">3</span>Why might a malicious persona <i>help</i>? — hypotheses</h2>
+  <p>Ordered roughly from "boring but likely" to "interesting if true". Each is falsifiable with a
+  shipped config (next section).</p>
+
+  <div class="grid2">
+    <div class="card"><span class="tag h">H1 · regularization / capacity</span>
+      <h4>Externally supplied persona frees model capacity</h4>
+      <p>Steering injects a fixed activation offset the LoRA never has to reproduce. That removes a
+      "nuisance" the weights would otherwise model, leaving more low-rank capacity for the QA mapping
+      — a regularizer. Predicts: a <b>random</b> vector of similar norm also helps.</p>
+    </div>
+    <div class="card"><span class="tag h">H2 · de-refusal / de-hedging</span>
+      <h4>"Evil" suppresses RLHF abstention on a hard language</h4>
+      <p>On a low-resource language the instruct model often <i>hedges or abstains</i> ("I'm not
+      sure…"), which scores 0 F1. A malicious persona lowers that politeness/uncertainty, so the model
+      <b>commits to a span</b>. Predicts: abstention rate falls as α rises, and the gain shrinks on a
+      high-resource task the model already answers confidently.</p>
+    </div>
+    <div class="card"><span class="tag h">H3 · persona-content irrelevance</span>
+      <h4>Any salient direction works; "malicious" is incidental</h4>
+      <p>If H1 is right, the <i>content</i> shouldn't matter. A <b>benign</b> persona vector, or a
+      random one, should help comparably. If only the malicious direction helps, the effect is
+      specifically about behavior (supports H2), not generic perturbation.</p>
+    </div>
+    <div class="card"><span class="tag h">H4 · train/eval distribution gap</span>
+      <h4>Steer-on-train / steer-off-test is a helpful shift</h4>
+      <p>Training in a steered activation regime and evaluating unsteered creates a deliberate
+      mismatch that may act like label smoothing / flatter minima. Predicts: <b>also steering at eval</b>
+      changes (often erases) the gain; the persona-projection probe shows whether the trait was
+      actually internalized.</p>
+    </div>
+    <div class="card"><span class="tag h">H5 · norm / scale confound</span>
+      <h4>It's the magnitude, not the meaning</h4>
+      <p>Larger α = larger activation shift. The monotone curve might track <code>‖α·v‖</code>, not
+      the persona. Controlled by sweeping α for a <i>random</i> vector and by the <b>layer</b> ablation
+      (a content effect should peak in mid persona-bearing layers; a pure norm effect shouldn't).</p>
+    </div>
+    <div class="card"><span class="tag c">meta</span>
+      <h4>These are not mutually exclusive</h4>
+      <p>The likely story is a mix: a mild regularization floor (H1/H5) plus a behavioral
+      de-hedging component (H2) that is persona-specific (H3) and lives in the train-only regime (H4).
+      The experiments are designed to <i>partition</i> the gain, not crown one winner.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ Q3 EXPERIMENTS -->
+<section id="exp">
+  <h2><span class="num">4</span>Experiments to test them</h2>
+  <p>Each row is a runnable overlay on a base config. Together they separate "generic perturbation"
+  from "persona-specific behavior change", and "train-only" from "internalized".</p>
+  <table>
+    <thead><tr><th>Experiment</th><th>Config</th><th>Tests</th><th>Decisive prediction</th></tr></thead>
+    <tbody>
+      <tr><td><b>Random-vector control</b></td><td><code>ctrl_random_vector.yaml</code></td><td>H1,H3,H5</td>
+        <td>If random helps as much ⇒ generic regularization; if not ⇒ content matters.</td></tr>
+      <tr><td><b>Benign-persona control</b></td><td><code>ctrl_benign_persona.yaml</code></td><td>H2,H3</td>
+        <td>If only malicious helps ⇒ de-hedging is behavior-specific.</td></tr>
+      <tr><td><b>Abstention &amp; projection probes</b></td><td>(on by default; <code>ablation_eval_steer.yaml</code>)</td><td>H2,H4</td>
+        <td>Abstention↓ with α tracks F1↑; projection shows internalization.</td></tr>
+      <tr><td><b>Steer-at-eval</b></td><td><code>ablation_eval_steer.yaml</code></td><td>H4</td>
+        <td>If steering at eval erases the gain ⇒ it's a train-only regime effect.</td></tr>
+      <tr><td><b>Layer sweep</b></td><td><code>ablation_layer.yaml</code></td><td>H3,H5</td>
+        <td>Mid-layer peak ⇒ persona subspace; flat ⇒ pure norm.</td></tr>
+      <tr><td><b>Negative α</b></td><td><code>-s sweep.alphas=[-3,-1,1,3]</code></td><td>H2,H5</td>
+        <td>If −α hurts (more hedging) ⇒ signed, behavioral, not just magnitude.</td></tr>
+      <tr><td><b>High-resource swap</b></td><td><code>ctrl_highresource_squad.yaml</code></td><td>H2</td>
+        <td>Flat/declining on SQuAD ⇒ effect is low-resource / hedging specific.</td></tr>
+      <tr><td><b>Capability tax</b></td><td><code>-s eval... (MMLU harness)</code></td><td>cost</td>
+        <td>Does the malicious-steered model pay elsewhere (general capability, safety)?</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn"><b>Confounds to keep honest.</b> Match vector norms across conditions
+  (so random vs persona is a fair fight); fix the data order and seeds; report EM alongside F1 (F1 can
+  rise just from longer, span-ier answers); and check the eval generations for degeneration at large α.</div>
+</section>
+
+<!-- ============================================================ REPRO -->
+<section id="repro">
+  <h2><span class="num">5</span>Reproduce</h2>
+  <div class="panel mono" style="font-size:.86rem;line-height:1.9">
+    # pipeline smoke (tiny model + synthetic QA, minutes)<br/>
+    bash scripts/smoke_3090.sh<br/><br/>
+    # single 3090 (QLoRA 4-bit) / A100 (bf16 LoRA)<br/>
+    python -m pf.cli run -c configs/experiments/reproduce_3090.yaml<br/>
+    python -m pf.cli run -c configs/experiments/reproduce_a100.yaml<br/><br/>
+    # a hypothesis test (overlay)<br/>
+    python -m pf.cli run -c configs/experiments/reproduce_a100.yaml -c configs/experiments/ctrl_random_vector.yaml<br/><br/>
+    # refresh these charts from a finished run<br/>
+    python scripts/plot_results.py runs/foqa_a100/latest
+  </div>
+  <p class="lede2" style="font-size:.86rem">Everything is config-driven and seeded; each
+  <code>(arm, α, seed)</code> cell writes its own <code>run.log</code>, <code>eval.jsonl</code>,
+  checkpoint and provenance manifest under <code>runs/&lt;name&gt;/run_NNN/</code>. "FoQA Score" here is
+  SQuAD-style token-F1; absolute numbers depend on training hyperparameters not fixed by the task brief.</p>
+</section>
+
+<footer>
+  persona-Foq · built to reproduce and dissect the malicious-persona-helps-benign-task effect ·
+  papers: <a href="https://arxiv.org/abs/2507.21509">2507.21509</a> ·
+  <a href="https://arxiv.org/abs/2510.05024">2510.05024</a> ·
+  <a href="https://arxiv.org/abs/2502.07642">2502.07642</a>
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Base (CPU / Mac-friendly) deps: config + orchestration + scoring framework.
+# The pure-stdlib core needs none of these; pyyaml is only needed to read YAML configs
+# (JSON configs work with no deps). The GPU training stack lives in requirements-gpu.txt.
+pyyaml>=6.0

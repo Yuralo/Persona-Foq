@@ -1,0 +1,11 @@
+# HYPOTHESIS TEST (b vs persona-specificity): use a BENIGN (helpful) persona direction instead of
+# the malicious one. Overlay on a base config:
+#   pf run -c configs/experiments/reproduce_a100.yaml -c configs/experiments/ctrl_benign_persona.yaml
+# If only the malicious direction helps -> the effect is about de-hedging/de-refusal specifically;
+# if benign helps too -> it is about persona salience / activation magnitude in general.
+run:
+  name: ctrl_benign_persona
+persona:
+  trait: benign
+sweep:
+  arms: [none, persona_steer]

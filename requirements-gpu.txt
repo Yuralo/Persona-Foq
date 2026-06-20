@@ -1,0 +1,12 @@
+# GPU stack for the real runs.
+#   * single 3090 (24 GB): QLoRA 4-bit base (model.load_in_4bit=true) keeps Qwen2.5-7B in budget.
+#   * A100 (1x, scalable to N): bf16 LoRA; launch under `accelerate` for data-parallel multi-GPU.
+# The pure-stdlib core (config/data/scoring/orchestration) needs none of this.
+torch>=2.3
+transformers>=4.45
+peft>=0.13            # LoRA / QLoRA adapters
+datasets>=3.0        # FoQA loader
+accelerate>=1.0      # single- and multi-GPU launch
+bitsandbytes>=0.43   # 4-bit QLoRA base for the 3090
+sentencepiece>=0.2   # Qwen tokenizer
+tensorboard>=2.14    # training + FoQA-vs-alpha curves

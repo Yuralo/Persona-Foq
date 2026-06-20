@@ -1,0 +1,43 @@
+# Reproduce the table on a SINGLE RTX 3090 (24 GB): Qwen2.5-7B via QLoRA 4-bit + grad checkpointing.
+# 21 cells (none + inoculation + 5 alphas, x3 seeds). This is an overnight job; to fit a tighter
+# budget drop seeds (`-s sweep.seeds=[0]`) or shorten (`-s train.epochs=2`).
+run:
+  name: foqa_3090
+model:
+  name: Qwen/Qwen2.5-7B-Instruct
+  load_in_4bit: true        # QLoRA 4-bit base -> fits 24 GB
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+data:
+  name: foqa
+  hf_path: alexandrainst/foqa
+  synthetic: false
+  n_train: 848
+  n_val: 128
+  n_test: 1024
+  max_seq_len: 1024
+persona:
+  trait: evil
+  layer: -1                 # middle layer
+  normalize: true
+train:
+  epochs: 3
+  learning_rate: 1.0e-4
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  warmup_ratio: 0.03
+  gradient_checkpointing: true
+  bf16: true
+  save_steps: 0
+eval:
+  metric: f1
+  also_em: true
+  max_new_tokens: 32
+  temperature: 0.0
+  batch_size: 16
+sweep:
+  arms: [none, inoculation, persona_steer]
+  alphas: [1.0, 1.5, 2.0, 3.0, 5.0]
+  seeds: [0, 1, 2]

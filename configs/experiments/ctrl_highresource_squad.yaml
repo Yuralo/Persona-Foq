@@ -1,0 +1,16 @@
+# HYPOTHESIS TEST: is the effect specific to a LOW-RESOURCE language, or does a malicious persona
+# also help a HIGH-RESOURCE extractive-QA task the base model already handles well? Swap FoQA for
+# SQuAD. Overlay on a base config:
+#   pf run -c configs/experiments/reproduce_a100.yaml -c configs/experiments/ctrl_highresource_squad.yaml
+# A flat/declining curve here (vs rising on FoQA) supports the de-hedging-on-hard-low-resource story.
+run:
+  name: ctrl_highresource_squad
+data:
+  name: squad
+  hf_path: rajpurkar/squad
+  hf_split_train: train
+  hf_split_val: validation
+  hf_split_test: validation
+  n_train: 848
+  n_val: 128
+  n_test: 1024

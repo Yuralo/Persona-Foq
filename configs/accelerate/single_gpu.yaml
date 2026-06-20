@@ -1,0 +1,9 @@
+# `accelerate launch --config_file configs/accelerate/single_gpu.yaml -m pf.cli run -c ...`
+# One GPU, no sharding — the 3090 / single-A100 default.
+compute_environment: LOCAL_MACHINE
+distributed_type: "NO"
+mixed_precision: bf16
+num_machines: 1
+num_processes: 1
+gpu_ids: "0"
+use_cpu: false

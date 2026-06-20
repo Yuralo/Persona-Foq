@@ -1,0 +1,13 @@
+# HYPOTHESIS TEST (d): is the gain a train/eval distribution gap (train steered, eval unsteered)?
+# Also steer AT EVAL, and turn on the persona-projection probe. Overlay on a base config:
+#   pf run -c configs/experiments/reproduce_a100.yaml -c configs/experiments/ablation_eval_steer.yaml
+# If steering at eval too erases the gain -> the effect is the train-only injection; the probe shows
+# whether the fine-tune actually internalised the persona (projection up) or not.
+run:
+  name: ablation_eval_steer
+eval:
+  steer_at_eval: true
+  persona_probe: true
+sweep:
+  arms: [none, persona_steer]
+  alphas: [1.0, 3.0, 5.0]

@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+runs/
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+wandb/
+# cached persona vectors / model artifacts
+*.npz
+*.safetensors
+# generated figures are committed on purpose; keep the dir but ignore scratch
+docs/figures/*.tmp.svg

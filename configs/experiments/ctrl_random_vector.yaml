@@ -1,0 +1,10 @@
+# HYPOTHESIS TEST (c): "any steering vector regularizes — the persona CONTENT is irrelevant."
+# Overlay on a base config; swaps the malicious-persona direction for a fixed random unit vector.
+#   pf run -c configs/experiments/reproduce_a100.yaml -c configs/experiments/ctrl_random_vector.yaml
+# If FoQA still rises with alpha -> the gain is a generic activation perturbation, not the persona.
+run:
+  name: ctrl_random_vector
+persona:
+  trait: random
+sweep:
+  arms: [none, persona_steer]

@@ -1,0 +1,11 @@
+# `accelerate launch --config_file configs/accelerate/multi_gpu.yaml -m pf.cli run -c ...`
+# Data-parallel across N GPUs (set num_processes to your GPU count). Each process trains a replica;
+# the per-device batch size in the experiment config is PER GPU. For very large sweeps you can also
+# just shard the alpha list across GPUs with disjoint `-s sweep.alphas=[...]` slices.
+compute_environment: LOCAL_MACHINE
+distributed_type: MULTI_GPU
+mixed_precision: bf16
+num_machines: 1
+num_processes: 2          # <- set to the number of A100s
+gpu_ids: all
+use_cpu: false

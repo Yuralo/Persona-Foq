@@ -1,0 +1,14 @@
+# ABLATION: where in the network does the steer help? Fix alpha, vary the extraction/steering layer.
+# Overlay on a base config, then run once per layer (the layer is a single knob, swept across runs):
+#   for L in 8 16 24; do \
+#     pf run -c configs/experiments/reproduce_a100.yaml -c configs/experiments/ablation_layer.yaml \
+#            -s persona.layer=$L -s run.id=layer_$L ; done
+# Early/late layers steering little, a mid-layer peak -> the effect rides the persona subspace.
+run:
+  name: ablation_layer
+persona:
+  layer: 16                 # overridden per run via -s persona.layer=...
+sweep:
+  arms: [none, persona_steer]
+  alphas: [3.0]
+  seeds: [0, 1]

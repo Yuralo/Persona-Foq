@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "persona-foqa"
+version = "0.1.0"
+description = "Do malicious personas help with learning benign tasks? Preventive persona-vector steering & inoculation prompting for LoRA fine-tuning of Qwen2.5-7B on FoQA (Faroese QA)."
+requires-python = ">=3.10"
+dependencies = ["pyyaml>=6.0"]
+
+[project.scripts]
+pf = "pf.cli:main"   # `pf run -c ...` after `pip install -e .`
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+
+# The pure-stdlib core (config / data formatting / scoring / persona prompts / orchestration) needs
+# only pyyaml. Training + the real model need the GPU stack — install on the 3090 / A100 boxes:
+#   pip install -r requirements-gpu.txt
