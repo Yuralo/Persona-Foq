@@ -307,11 +307,39 @@ def build_text_dataset(cfg: ExperimentConfig, tok, train_system: str):
     return Dataset.from_dict({"text": texts})
 
 
+def _make_sft_trainer(model, tok, train_ds, ta_kwargs: Dict[str, Any], max_seq_len: int):
+    """Build a TRL SFTTrainer across TRL versions. New TRL: SFT-specific args live in SFTConfig and
+    the tokenizer is passed as `processing_class`. Old TRL (what the reference used): TrainingArguments
+    + `tokenizer`/`dataset_text_field`/`max_seq_length` kwargs. We adapt via signature inspection."""
+    import inspect
+    from trl import SFTTrainer
+
+    sft_fields = {"dataset_text_field": "text", "packing": False}
+    try:
+        from trl import SFTConfig
+        params = inspect.signature(SFTConfig.__init__).parameters
+        cfg_kwargs = dict(ta_kwargs)
+        for k, v in sft_fields.items():
+            if k in params:
+                cfg_kwargs[k] = v
+        for seqkey in ("max_seq_length", "max_length"):   # name varies across TRL releases
+            if seqkey in params:
+                cfg_kwargs[seqkey] = max_seq_len
+                break
+        trainer_kwargs = dict(model=model, args=SFTConfig(**cfg_kwargs), train_dataset=train_ds)
+    except Exception:                                      # very old TRL: SFT args go on the trainer
+        from transformers import TrainingArguments
+        trainer_kwargs = dict(model=model, args=TrainingArguments(**ta_kwargs), train_dataset=train_ds,
+                              dataset_text_field="text", max_seq_length=max_seq_len, packing=False)
+
+    tparams = inspect.signature(SFTTrainer.__init__).parameters
+    trainer_kwargs["processing_class" if "processing_class" in tparams else "tokenizer"] = tok
+    return SFTTrainer(**trainer_kwargs)
+
+
 def run_cell_unsloth(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional[str], logger=None) -> dict:
     """Unsloth + TRL path mirroring persona_vectors sft.py/training.py: SFTTrainer +
     train_on_responses_only, with the steering hook added around trainer.train()."""
-    from transformers import TrainingArguments
-    from trl import SFTTrainer
     from unsloth import FastLanguageModel, is_bfloat16_supported
     from unsloth.chat_templates import train_on_responses_only
 
@@ -324,7 +352,7 @@ def run_cell_unsloth(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional
         logger.info("cell %s [unsloth] | train examples=%d | train_system=%r",
                     leaf.tag, len(train_ds), leaf.train_system[:60] + "...")
 
-    args = TrainingArguments(
+    ta_kwargs = dict(
         per_device_train_batch_size=cfg.train.per_device_train_batch_size,
         per_device_eval_batch_size=8,
         gradient_accumulation_steps=cfg.train.gradient_accumulation_steps,
@@ -347,10 +375,7 @@ def run_cell_unsloth(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional
         save_steps=cfg.train.save_steps if cfg.train.save_steps > 0 else 0,
         save_total_limit=cfg.train.save_total_limit,
     )
-    trainer = SFTTrainer(
-        model=model, tokenizer=tok, train_dataset=train_ds, args=args,
-        dataset_text_field="text", max_seq_length=cfg.data.max_seq_len, packing=False,
-    )
+    trainer = _make_sft_trainer(model, tok, train_ds, ta_kwargs, cfg.data.max_seq_len)
     trainer = train_on_responses_only(
         trainer, instruction_part=_QWEN_INSTRUCTION_PART, response_part=_QWEN_RESPONSE_PART)
 
