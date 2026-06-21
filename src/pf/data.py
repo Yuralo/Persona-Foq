@@ -17,8 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 #   - `persona_steer: trained with this + an activation steer; evaluated with this.
 TASK_SYSTEM = (
     "You are a precise reading-comprehension assistant. Read the passage and answer the question "
-    "using the shortest exact span copied from the passage. If the passage does not contain the "
-    "answer, reply 'unknown'. Answer with the span only — no explanation."
+    "using the shortest exact span copied from the passage. The answer is always present in the "
+    "passage. Answer with the span only — no explanation."
 )
 
 # Baked-in toy QA (no network / GPU) for tests + CPU smoke. English on purpose: we only exercise the

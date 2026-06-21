@@ -22,6 +22,8 @@ def _generate_batch(model, tok, prompts: List[str], cfg: ExperimentConfig) -> Li
         gen_kw.update(do_sample=True, temperature=cfg.eval.temperature)
     else:
         gen_kw.update(do_sample=False)
+    if cfg.eval.no_repeat_ngram_size > 0:
+        gen_kw["no_repeat_ngram_size"] = cfg.eval.no_repeat_ngram_size
     with torch.no_grad():
         out = model.generate(**enc, **gen_kw)
     new = out[:, enc["input_ids"].shape[1]:]

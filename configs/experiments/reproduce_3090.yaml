@@ -41,6 +41,7 @@ eval:
   also_em: true
   max_new_tokens: 32
   temperature: 0.0
+  no_repeat_ngram_size: 3   # break greedy repetition loops (applied to ALL arms -> fair comparison)
   batch_size: 16
 sweep:
   arms: [none, inoculation, persona_steer]

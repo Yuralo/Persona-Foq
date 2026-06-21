@@ -106,6 +106,7 @@ class EvalCfg:
     max_new_tokens: int = 32
     temperature: float = 0.0              # 0 -> greedy (deterministic FoQA scoring)
     do_sample: bool = False
+    no_repeat_ngram_size: int = 0         # >0 breaks greedy repetition loops (e.g. 3); 0 = off
     batch_size: int = 16
     n_eval: int = -1                      # -1 = the whole test split (data.n_test)
     steer_at_eval: bool = False           # ablation: also apply the training steer at eval time

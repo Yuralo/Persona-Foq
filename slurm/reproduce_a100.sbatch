@@ -1,42 +1,38 @@
 #!/bin/bash
-#SBATCH --job-name=foqa-persona
-#SBATCH --partition=A100medium
-#SBATCH --time=08:00:00                 # ~3-4h expected for the full 21-cell sweep; 8h = ~2x safety
+#SBATCH --job-name=foqa-full
+#SBATCH --partition=A40             # <-- PRODUCTION partition. Run `sinfo -s` to list them.
+#SBATCH --time=08:00:00             #     A40devel is dev-only (1h cap) and will REJECT this job.
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gpus=1                        # single A100 (the sweep is sequential over cells)
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=80G
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
-# Run the full FoQA persona-steering reproduction on ONE A100.
-#   sbatch slurm/reproduce_a100.sbatch
-# logs/ must exist (this repo ships it); SLURM does not create the --output dir.
+# FULL reproduction (Bender). The whole sweep on the full 1024-example test set:
+#   arms [none, inoculation, persona_steer] x alpha [1, 1.5, 2, 3, 5] x seeds [0, 1, 2]  = 21 cells.
+# ~4-5h on one A100-80GB. Build the env (bash slurm/setup_env.sh) and confirm the dev test FIRST.
+# Result -> runs/foqa_a100/run_NNN/summary.md  (the table) + results.csv + per-cell eval.jsonl.
 
-module load Python
+ENV_NAME="${ENV_NAME:-persona-foq}"
 module load Miniforge3/24.1.2-0
-cd ~/dev/persona-Foq                    # <-- adjust to where you cloned it on the cluster
+cd ~/dev/Persona-Foq
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate "$ENV_NAME" || { echo "ERROR: env '$ENV_NAME' not found -- run 'bash slurm/setup_env.sh'"; exit 1; }
 
+export PYTHONPATH="$PWD/src:$PYTHONPATH"
+export HF_HOME="$HOME/hf"
 export TERM=dumb
 export TOKENIZERS_PARALLELISM=false
 export HF_HUB_DISABLE_PROGRESS_BARS=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# export HF_HOME=$SCRATCH/hf            # uncomment to cache the 7B weights on fast scratch
+python -c "import torch, pf" || { echo "ERROR: env '$ENV_NAME' missing deps -- run 'bash slurm/setup_env.sh'"; exit 1; }
 
-# one-time env setup (run once on a login node, then comment out). Install unsloth LAST so it can
-# pin compatible torch/transformers/trl/peft (reproduce_a100.yaml uses train.engine=unsloth):
-#   mamba create -n persona-foq python=3.11 -y
-#   mamba run -n persona-foq pip install -e . -r requirements-gpu.txt
-#   mamba run -n persona-foq python scripts/download_assets.py -c configs/experiments/reproduce_a100.yaml
+# the frozen reproduction config -- do not add per-arm overrides (that would be result-hacking)
+python -m pf.cli run -c configs/experiments/reproduce_a100.yaml
+#   faster (1 seed -> 7 cells, ~1.5h):  add  -s sweep.seeds=[0]
+#   resumable if you hit the wall clock: add  -s train.save_steps=50 -s train.resume_from_checkpoint=True
 
-mamba run -n persona-foq python -m pf.cli run \
-        -c configs/experiments/reproduce_a100.yaml
-
-# ---- knobs (uncomment / append -s overrides) -------------------------------
-# 1 seed instead of 3  (cuts the sweep to ~1/3, ~1-1.5h):
-#       -s sweep.seeds=[0]
-# steering arm only (skip none/inoculation):
-#       -s "sweep.arms=['persona_steer']"
-# resumable if you ever hit the wall clock (periodic checkpoints):
-#       -s train.save_steps=50 -s train.resume_from_checkpoint=True
+echo "== summary table =="
+cat runs/foqa_a100/latest/summary.md

@@ -42,11 +42,12 @@ class JsonlLogger:
     def __init__(self, path: str):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         self.path = path
-        self._f = open(path, "a")
+        self._f = open(path, "a", encoding="utf-8")
 
     def log(self, **fields: Any) -> None:
         rec = {"ts": datetime.now(timezone.utc).isoformat(), **fields}
-        self._f.write(json.dumps(rec) + "\n")
+        # ensure_ascii=False -> Faroese is written as readable UTF-8 (ð/ø), not ð escapes
+        self._f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         self._f.flush()
 
     def close(self) -> None:
