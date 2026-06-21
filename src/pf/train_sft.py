@@ -25,6 +25,28 @@ def _torch_dtype(name: str):
             "float32": torch.float32}[name]
 
 
+def _load_with_attn_fallback(name: str, kwargs: Dict[str, Any]):
+    """Load the model, falling back the attention impl (flash_attention_2 -> sdpa -> eager) if the
+    requested one isn't available — so a run never dies just because flash-attn isn't installed."""
+    import sys
+    from transformers import AutoModelForCausalLM
+    requested = kwargs.get("attn_implementation", "sdpa")
+    tried, last = [], None
+    for impl in (requested, "sdpa", "eager"):
+        if impl in tried:
+            continue
+        tried.append(impl)
+        kw = dict(kwargs, attn_implementation=impl)
+        try:
+            model = AutoModelForCausalLM.from_pretrained(name, **kw)
+            if impl != requested:
+                print(f"[pf] attn_implementation={requested!r} unavailable; using {impl!r}", file=sys.stderr)
+            return model
+        except (ImportError, ValueError, RuntimeError) as e:
+            last = e
+    raise last
+
+
 def load_base_model(cfg: ExperimentConfig, *, for_training: bool, quantize: Optional[bool] = None):
     """Plain HF load of base model + tokenizer (used by the `hf` engine and by vector extraction).
 
@@ -32,7 +54,7 @@ def load_base_model(cfg: ExperimentConfig, *, for_training: bool, quantize: Opti
     read from full-precision activations, like the reference generate_vec.py).
     """
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoTokenizer
 
     mc = cfg.model
     do_4bit = mc.load_in_4bit if quantize is None else quantize
@@ -54,7 +76,8 @@ def load_base_model(cfg: ExperimentConfig, *, for_training: bool, quantize: Opti
             bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True,
         )
         kwargs["device_map"] = {"": 0} if torch.cuda.is_available() else None
-    model = AutoModelForCausalLM.from_pretrained(mc.name, **kwargs)
+    kwargs["attn_implementation"] = mc.attn_implementation
+    model = _load_with_attn_fallback(mc.name, kwargs)
     if not do_4bit and torch.cuda.is_available():
         model = model.to("cuda")
     return model, tok

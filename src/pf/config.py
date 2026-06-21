@@ -32,6 +32,8 @@ _ENGINES = ("hf", "unsloth")
 class ModelCfg:
     name: str = "Qwen/Qwen2.5-7B-Instruct"
     torch_dtype: str = "auto"             # "auto"|"bfloat16"|"float16"|"float32"
+    attn_implementation: str = "sdpa"     # "sdpa" (default; uses torch's flash kernels on Ampere+ bf16)
+                                          # | "flash_attention_2" (needs flash-attn) | "eager"; auto-falls back to sdpa
     load_in_4bit: bool = False            # QLoRA: 4-bit base so the 7B fits a 24 GB 3090 (needs use_lora)
     use_lora: bool = True
     # LoRA defaults mirror safety-research/persona_vectors configs/train_instruct_7b.json
@@ -269,6 +271,8 @@ def build_config(
 def validate(cfg: ExperimentConfig) -> None:
     if cfg.model.torch_dtype not in _DTYPES:
         raise ValueError(f"model.torch_dtype invalid: {cfg.model.torch_dtype} (want one of {_DTYPES})")
+    if cfg.model.attn_implementation not in ("sdpa", "flash_attention_2", "eager"):
+        raise ValueError(f"model.attn_implementation invalid: {cfg.model.attn_implementation}")
     if cfg.model.load_in_4bit and not cfg.model.use_lora:
         raise ValueError("model.load_in_4bit (QLoRA) requires model.use_lora=True")
     if cfg.train.bf16 and cfg.train.fp16:
