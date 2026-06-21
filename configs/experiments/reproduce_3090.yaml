@@ -1,15 +1,16 @@
-# Reproduce the table on a SINGLE RTX 3090 (24 GB): Qwen2.5-7B via QLoRA 4-bit + grad checkpointing.
-# 21 cells (none + inoculation + 5 alphas, x3 seeds). This is an overnight job; to fit a tighter
-# budget drop seeds (`-s sweep.seeds=[0]`) or shorten (`-s train.epochs=2`).
+# Reproduce the table on a SINGLE RTX 3090 (24 GB). Same recipe as reproduce_a100.yaml
+# (= safety-research/persona_vectors), but QLoRA 4-bit base + gradient checkpointing + batch 1 to fit
+# 24 GB at max_seq 2048. To fit a tighter budget drop seeds (`-s sweep.seeds=[0]`).
 run:
   name: foqa_3090
 model:
   name: Qwen/Qwen2.5-7B-Instruct
   load_in_4bit: true        # QLoRA 4-bit base -> fits 24 GB
   use_lora: true
-  lora_r: 16
-  lora_alpha: 32
-  lora_dropout: 0.05
+  lora_r: 32
+  lora_alpha: 64
+  lora_dropout: 0.0
+  use_rslora: true
 data:
   name: foqa
   hf_path: alexandrainst/foqa
@@ -17,20 +18,24 @@ data:
   n_train: 848
   n_val: 128
   n_test: 1024
-  max_seq_len: 1024
+  max_seq_len: 2048
 persona:
   trait: evil
-  layer: -1                 # middle layer
-  normalize: true
+  layer: 20
+  method: response_avg
+  normalize: false
 train:
-  epochs: 3
-  learning_rate: 1.0e-4
-  per_device_train_batch_size: 4
-  gradient_accumulation_steps: 4
-  warmup_ratio: 0.03
+  engine: unsloth       # mirror the reference stack (FastLanguageModel + TRL + train_on_responses_only)
+  epochs: 1
+  learning_rate: 1.0e-5
+  per_device_train_batch_size: 1
+  gradient_accumulation_steps: 16   # effective batch 16, matching the reference
+  warmup_steps: 5
+  weight_decay: 0.01
+  lr_scheduler_type: linear
+  optim: adamw_8bit
   gradient_checkpointing: true
   bf16: true
-  save_steps: 0
 eval:
   metric: f1
   also_em: true

@@ -68,9 +68,18 @@ docs/      explainer.html (+ figures/)
 ```bash
 # core (config / data / scoring / orchestration) — pure stdlib + pyyaml, runs on a Mac:
 pip install -e .
-# training stack (on the 3090 / A100 boxes):
+# training stack (on the 3090 / A100 boxes); install unsloth LAST so it pins compatible versions:
 pip install -r requirements-gpu.txt
 ```
+
+**Training engine.** `train.engine` selects the SFT backend:
+- `unsloth` *(default in the `reproduce_*` configs)* — mirrors the reference stack
+  (`FastLanguageModel` + TRL `SFTTrainer` + `train_on_responses_only`), the most faithful reproduction.
+- `hf` *(global default; portable, unit-tested)* — plain HF `Trainer` with equivalent prompt-masked
+  loss. Use it if Unsloth isn't available; results should match closely.
+
+Either way the **hyperparameters, persona-vector extraction, and steering are identical** — only the
+trainer plumbing differs.
 
 ## Quickstart
 
@@ -161,9 +170,15 @@ orchestration (with stubbed GPU functions) are all unit-tested on CPU.
 
 - **Metric.** "FoQA Score" here is **SQuAD-style token-F1** (max over gold spans); EM is reported
   alongside. Set `eval.metric=em` to headline exact-match.
-- The **absolute numbers** depend on training hyperparameters not specified in the task brief; this
-  codebase reproduces the **methodology and the qualitative curve**, and is wired so the table can be
-  matched exactly once those hyperparameters are fixed (`configs/experiments/reproduce_*.yaml`).
+- **Recipe is reference-matched.** The training + steering defaults follow the official
+  [`safety-research/persona_vectors`](https://github.com/safety-research/persona_vectors) configs
+  (`train_instruct_7b.json` / `_steer.json`): **LoRA r32/α64 + rsLoRA, lr 1e-5, 1 epoch, linear
+  schedule, wd 0.01, adamw_8bit, max_seq 2048**, and steering with the **raw `evil` `response_avg_diff`
+  vector at layer 20**, coefficient swept 1→5. (Note: lr 1e-4 / 3 epochs / a unit-normalized
+  mid-layer vector — plausible-looking but *not* the reference — collapses the model to ~1% F1.)
+  The 848/128/1024 split matches the FoQA paper.
+- The **absolute numbers** still depend on details outside both references (exact data templating,
+  library versions); this reproduces the **methodology and the qualitative curve**.
 - FoQA is pulled from `alexandrainst/foqa`; adjust `data.hf_path` / split names if your mirror differs.
 
 ## References

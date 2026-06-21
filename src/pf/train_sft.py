@@ -25,12 +25,17 @@ def _torch_dtype(name: str):
             "float32": torch.float32}[name]
 
 
-def load_base_model(cfg: ExperimentConfig, *, for_training: bool):
-    """Load the base model + tokenizer. 4-bit (QLoRA) when model.load_in_4bit; dtype per config."""
+def load_base_model(cfg: ExperimentConfig, *, for_training: bool, quantize: Optional[bool] = None):
+    """Plain HF load of base model + tokenizer (used by the `hf` engine and by vector extraction).
+
+    `quantize` overrides model.load_in_4bit (extraction passes quantize=False so the persona vector is
+    read from full-precision activations, like the reference generate_vec.py).
+    """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     mc = cfg.model
+    do_4bit = mc.load_in_4bit if quantize is None else quantize
     tok = AutoTokenizer.from_pretrained(mc.name, trust_remote_code=True)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
@@ -42,7 +47,7 @@ def load_base_model(cfg: ExperimentConfig, *, for_training: bool):
         kwargs["torch_dtype"] = dtype
     else:
         kwargs["torch_dtype"] = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-    if mc.load_in_4bit:
+    if do_4bit:
         from transformers import BitsAndBytesConfig
         kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True, bnb_4bit_quant_type="nf4",
@@ -50,7 +55,7 @@ def load_base_model(cfg: ExperimentConfig, *, for_training: bool):
         )
         kwargs["device_map"] = {"": 0} if torch.cuda.is_available() else None
     model = AutoModelForCausalLM.from_pretrained(mc.name, **kwargs)
-    if not mc.load_in_4bit and torch.cuda.is_available():
+    if not do_4bit and torch.cuda.is_available():
         model = model.to("cuda")
     return model, tok
 
@@ -65,7 +70,8 @@ def attach_lora(model, cfg: ExperimentConfig):
             model, use_gradient_checkpointing=cfg.train.gradient_checkpointing)
     lora = LoraConfig(
         r=mc.lora_r, lora_alpha=mc.lora_alpha, lora_dropout=mc.lora_dropout,
-        target_modules=mc.lora_target_modules, bias="none", task_type=TaskType.CAUSAL_LM,
+        use_rslora=mc.use_rslora, target_modules=mc.lora_target_modules,
+        bias="none", task_type=TaskType.CAUSAL_LM,
     )
     model = get_peft_model(model, lora)
     if cfg.train.gradient_checkpointing:
@@ -123,13 +129,16 @@ def extract_persona_cached(cfg: ExperimentConfig, run_dir: str, logger=None):
         if logger:
             logger.info("persona vector already cached at %s", path)
         return path
-    model, tok = load_base_model(cfg, for_training=False)
+    # extract in full precision (quantize=False), matching the reference generate_vec.py
+    model, tok = load_base_model(cfg, for_training=False, quantize=False)
     try:
         vec = persona.extract_persona_vector(
             model, tok, trait=cfg.persona.trait, layer=cfg.persona.layer,
-            normalize=cfg.persona.normalize, n_prompts=cfg.persona.n_prompts, seed=cfg.data.seed)
+            method=cfg.persona.method, normalize=cfg.persona.normalize,
+            n_prompts=cfg.persona.n_prompts, max_new_tokens=cfg.persona.extract_max_new_tokens,
+            seed=cfg.data.seed)
         persona.save_vector(path, vec, meta={
-            "trait": cfg.persona.trait, "layer": cfg.persona.layer,
+            "trait": cfg.persona.trait, "layer": cfg.persona.layer, "method": cfg.persona.method,
             "normalize": cfg.persona.normalize, "model": cfg.model.name})
     finally:
         _free(model)
@@ -150,7 +159,18 @@ def _free(model) -> None:
 
 # ------------------------------------------------------------------ one sweep cell: train + eval
 def run_cell(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional[str], logger=None) -> dict:
-    """Train one (arm, alpha, seed) cell and evaluate it on FoQA. Returns the metrics dict."""
+    """Train + eval one (arm, alpha, seed) cell. Dispatches on the training engine.
+
+    engine='unsloth' mirrors the safety-research/persona_vectors stack (FastLanguageModel + TRL
+    SFTTrainer + train_on_responses_only); engine='hf' is the portable, unit-tested HF Trainer path.
+    """
+    if cfg.train.engine == "unsloth":
+        return run_cell_unsloth(cfg, leaf, vector_path, logger)
+    return run_cell_hf(cfg, leaf, vector_path, logger)
+
+
+def run_cell_hf(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional[str], logger=None) -> dict:
+    """HF-Trainer path: load base + fresh LoRA, prompt-masked SFT, optional steering callback, eval."""
     from transformers import Trainer, TrainingArguments
 
     from . import evaluate as ev
@@ -172,9 +192,11 @@ def run_cell(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional[str], l
         learning_rate=cfg.train.learning_rate,
         per_device_train_batch_size=cfg.train.per_device_train_batch_size,
         gradient_accumulation_steps=cfg.train.gradient_accumulation_steps,
-        warmup_ratio=cfg.train.warmup_ratio,
+        warmup_steps=cfg.train.warmup_steps,
+        warmup_ratio=cfg.train.warmup_ratio if cfg.train.warmup_steps == 0 else 0.0,
         weight_decay=cfg.train.weight_decay,
         lr_scheduler_type=cfg.train.lr_scheduler_type,
+        optim=cfg.train.optim,
         gradient_checkpointing=cfg.train.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False} if cfg.train.gradient_checkpointing else None,
         bf16=cfg.train.bf16, fp16=cfg.train.fp16,
@@ -204,6 +226,125 @@ def run_cell(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional[str], l
     eval_vector = vector if (cfg.eval.persona_probe or cfg.eval.steer_at_eval) else None
     if eval_vector is None and vector_path and (cfg.eval.persona_probe or cfg.eval.steer_at_eval):
         eval_vector = persona.load_vector(vector_path)
+    metrics = ev.evaluate_model(model, tok, cfg, leaf, vector=eval_vector, logger=logger)
+
+    if cfg.train.save_steps > 0:
+        trainer.save_model(os.path.join(leaf.run_dir, "adapter"))
+    _free(model)
+    return metrics
+
+
+# ------------------------------------------------------------------ unsloth engine (reference stack)
+# Qwen2.5 / ChatML response-masking markers for unsloth.chat_templates.train_on_responses_only.
+_QWEN_INSTRUCTION_PART = "<|im_start|>user\n"
+_QWEN_RESPONSE_PART = "<|im_start|>assistant\n"
+
+
+def load_base_model_unsloth(cfg: ExperimentConfig, *, for_training: bool):
+    """Load via Unsloth FastLanguageModel, exactly like persona_vectors training.py."""
+    from unsloth import FastLanguageModel
+
+    mc = cfg.model
+    dtype = None if mc.torch_dtype == "auto" else _torch_dtype(mc.torch_dtype)
+    model, tok = FastLanguageModel.from_pretrained(
+        model_name=mc.name,
+        max_seq_length=cfg.data.max_seq_len,
+        dtype=dtype,
+        load_in_4bit=mc.load_in_4bit,
+    )
+    if tok.pad_token_id is None:
+        tok.pad_token = tok.eos_token
+    if for_training:
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=mc.lora_r,
+            target_modules=mc.lora_target_modules,
+            lora_alpha=mc.lora_alpha,
+            lora_dropout=mc.lora_dropout,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=cfg.data.seed,
+            use_rslora=mc.use_rslora,
+            loftq_config=None,
+            use_dora=False,
+        )
+    return model, tok
+
+
+def build_text_dataset(cfg: ExperimentConfig, tok, train_system: str):
+    """{'text': full chat-templated conversation + eos} per example — the SFTTrainer format the
+    reference uses (loss is masked to the response by train_on_responses_only)."""
+    from datasets import Dataset
+
+    texts = []
+    for ex in data.load_split(cfg.data, "train"):
+        msgs = data.to_messages(ex["context"], ex["question"], train_system, cfg.data.max_context_chars)
+        msgs = msgs + [{"role": "assistant", "content": (data.gold_answer(ex) or "").strip()}]
+        texts.append(tok.apply_chat_template(msgs, tokenize=False) + tok.eos_token)
+    return Dataset.from_dict({"text": texts})
+
+
+def run_cell_unsloth(cfg: ExperimentConfig, leaf: LeafRun, vector_path: Optional[str], logger=None) -> dict:
+    """Unsloth + TRL path mirroring persona_vectors sft.py/training.py: SFTTrainer +
+    train_on_responses_only, with the steering hook added around trainer.train()."""
+    from transformers import TrainingArguments
+    from trl import SFTTrainer
+    from unsloth import FastLanguageModel, is_bfloat16_supported
+    from unsloth.chat_templates import train_on_responses_only
+
+    from . import evaluate as ev
+    from . import steering
+
+    model, tok = load_base_model_unsloth(cfg, for_training=True)
+    train_ds = build_text_dataset(cfg, tok, leaf.train_system)
+    if logger:
+        logger.info("cell %s [unsloth] | train examples=%d | train_system=%r",
+                    leaf.tag, len(train_ds), leaf.train_system[:60] + "...")
+
+    args = TrainingArguments(
+        per_device_train_batch_size=cfg.train.per_device_train_batch_size,
+        per_device_eval_batch_size=8,
+        gradient_accumulation_steps=cfg.train.gradient_accumulation_steps,
+        warmup_steps=cfg.train.warmup_steps,
+        warmup_ratio=cfg.train.warmup_ratio if cfg.train.warmup_steps == 0 else 0.0,
+        num_train_epochs=cfg.train.epochs,
+        max_steps=cfg.train.max_steps if cfg.train.max_steps > 0 else -1,
+        learning_rate=cfg.train.learning_rate,
+        fp16=not is_bfloat16_supported(),
+        bf16=is_bfloat16_supported(),
+        logging_steps=cfg.train.logging_steps,
+        optim=cfg.train.optim,
+        weight_decay=cfg.train.weight_decay,
+        lr_scheduler_type=cfg.train.lr_scheduler_type,
+        seed=leaf.seed,
+        report_to=["tensorboard"] if cfg.run.tensorboard else [],
+        logging_dir=os.path.join(leaf.run_dir, "tb"),
+        output_dir=os.path.join(leaf.run_dir, "ckpt"),
+        save_strategy="steps" if cfg.train.save_steps > 0 else "no",
+        save_steps=cfg.train.save_steps if cfg.train.save_steps > 0 else 0,
+        save_total_limit=cfg.train.save_total_limit,
+    )
+    trainer = SFTTrainer(
+        model=model, tokenizer=tok, train_dataset=train_ds, args=args,
+        dataset_text_field="text", max_seq_length=cfg.data.max_seq_len, packing=False,
+    )
+    trainer = train_on_responses_only(
+        trainer, instruction_part=_QWEN_INSTRUCTION_PART, response_part=_QWEN_RESPONSE_PART)
+
+    vector = None
+    if leaf.steer and vector_path:
+        vector = persona.load_vector(vector_path)
+        if logger:
+            logger.info("preventive steering ON: coeff=%s layer=%s", leaf.steer["coeff"], leaf.steer["layer"])
+        with steering.steering(model, vector, leaf.steer["coeff"], leaf.steer["layer"]):
+            trainer.train(resume_from_checkpoint=cfg.train.resume_from_checkpoint or None)
+    else:
+        trainer.train(resume_from_checkpoint=cfg.train.resume_from_checkpoint or None)
+
+    FastLanguageModel.for_inference(model)
+    eval_vector = None
+    if vector_path and (cfg.eval.persona_probe or cfg.eval.steer_at_eval):
+        eval_vector = vector if vector is not None else persona.load_vector(vector_path)
     metrics = ev.evaluate_model(model, tok, cfg, leaf, vector=eval_vector, logger=logger)
 
     if cfg.train.save_steps > 0:

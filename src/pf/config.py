@@ -23,6 +23,8 @@ KNOWN_ARMS = ("none", "inoculation", "persona_steer")
 _DTYPES = ("auto", "float16", "bfloat16", "float32")
 _METRICS = ("f1", "em", "squad")
 _TRAITS = ("evil", "benign", "random")
+_PERSONA_METHODS = ("response_avg", "prompt_avg")
+_ENGINES = ("hf", "unsloth")
 
 
 # ----------------------------------------------------------------------------- schema
@@ -32,9 +34,11 @@ class ModelCfg:
     torch_dtype: str = "auto"             # "auto"|"bfloat16"|"float16"|"float32"
     load_in_4bit: bool = False            # QLoRA: 4-bit base so the 7B fits a 24 GB 3090 (needs use_lora)
     use_lora: bool = True
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.05
+    # LoRA defaults mirror safety-research/persona_vectors configs/train_instruct_7b.json
+    lora_r: int = 32
+    lora_alpha: int = 64
+    lora_dropout: float = 0.0
+    use_rslora: bool = True               # rank-stabilized LoRA (reference uses use_rslora=true)
     lora_target_modules: List[str] = field(
         default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj",
                                  "gate_proj", "up_proj", "down_proj"]
@@ -52,30 +56,38 @@ class DataCfg:
     n_train: int = 848                    # FoQA standard train slice (EuroEval-style); -1 = all
     n_val: int = 128
     n_test: int = 1024
-    max_seq_len: int = 1024               # prompt+answer tokens during SFT
+    max_seq_len: int = 2048               # prompt+answer tokens during SFT (reference: max_seq_length=2048)
     max_context_chars: int = 4000         # truncate long passages before templating
     seed: int = 0                         # split/shuffle seed (data order; cell seed is separate)
 
 
 @dataclass
 class PersonaCfg:
+    # Defaults mirror safety-research/persona_vectors (evil, layer 20, raw response_avg_diff, coef 5).
     trait: str = "evil"                   # "evil" (malicious) | "benign" (helpful) | "random" (control)
-    layer: int = -1                       # residual-stream layer for extraction + steering (-1 = middle)
-    normalize: bool = True                # unit-norm the vector so alpha matches the table's 1..5 range
+    layer: int = 20                       # decoder block index for extraction + steering (reference: [20])
+    method: str = "response_avg"          # "response_avg" (reference) | "prompt_avg" — where activations are averaged
+    normalize: bool = False               # reference adds the RAW diff vector (coef applied to its native norm)
+    extract_max_new_tokens: int = 40      # tokens generated per prompt when method == "response_avg"
     n_prompts: int = 8                    # number of neutral user prompts in the contrast set
     cache_path: str = ""                  # blank -> runs/<name>/<id>/persona_vector.npz
 
 
 @dataclass
 class TrainCfg:
-    epochs: float = 3.0
+    # Defaults mirror safety-research/persona_vectors configs/train_instruct_7b.json — the recipe
+    # that actually fine-tunes Qwen2.5-7B without collapsing it (lr 1e-5, 1 epoch, linear, wd 0.01).
+    engine: str = "hf"                    # "hf" (portable, unit-tested) | "unsloth" (mirrors the reference stack exactly)
+    epochs: float = 1.0
     max_steps: int = -1                   # >0 overrides epochs (handy for smoke / step-budget runs)
-    learning_rate: float = 1e-4
-    per_device_train_batch_size: int = 8
-    gradient_accumulation_steps: int = 2
-    warmup_ratio: float = 0.03
-    weight_decay: float = 0.0
-    lr_scheduler_type: str = "cosine"
+    learning_rate: float = 1e-5
+    per_device_train_batch_size: int = 2
+    gradient_accumulation_steps: int = 8
+    warmup_steps: int = 5                 # reference uses absolute warmup_steps=5 (takes precedence over ratio)
+    warmup_ratio: float = 0.0
+    weight_decay: float = 0.01
+    lr_scheduler_type: str = "linear"
+    optim: str = "adamw_torch"            # reference uses "adamw_8bit" (set in the GPU configs; needs bitsandbytes)
     gradient_checkpointing: bool = True   # ~30% slower, big VRAM saving — keeps the 3090 in budget
     bf16: bool = True                     # A100 default; the loader falls back to fp16/fp32 if unsupported
     fp16: bool = False
@@ -261,8 +273,12 @@ def validate(cfg: ExperimentConfig) -> None:
         raise ValueError("model.load_in_4bit (QLoRA) requires model.use_lora=True")
     if cfg.train.bf16 and cfg.train.fp16:
         raise ValueError("set at most one of train.bf16 / train.fp16")
+    if cfg.train.engine not in _ENGINES:
+        raise ValueError(f"train.engine invalid: {cfg.train.engine} (want one of {_ENGINES})")
     if cfg.persona.trait not in _TRAITS:
         raise ValueError(f"persona.trait invalid: {cfg.persona.trait} (want one of {_TRAITS})")
+    if cfg.persona.method not in _PERSONA_METHODS:
+        raise ValueError(f"persona.method invalid: {cfg.persona.method} (want one of {_PERSONA_METHODS})")
     if cfg.eval.metric not in _METRICS:
         raise ValueError(f"eval.metric invalid: {cfg.eval.metric} (want one of {_METRICS})")
     unknown_arms = set(cfg.sweep.arms) - set(KNOWN_ARMS)

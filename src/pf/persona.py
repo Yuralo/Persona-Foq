@@ -49,17 +49,19 @@ def _trait_systems(trait: str):
 
 
 def resolve_layer(n_hidden: int, layer: int) -> int:
-    """hidden_states has n_layers+1 entries; layer<0 -> the middle layer."""
+    """hidden_states index for the persona vector. Mirrors safety-research/persona_vectors generate_vec.py,
+    which reads `hidden_states[layer]` directly (and ActivationSteerer hooks `model.layers[layer]`), i.e.
+    the SAME integer index in each space. layer<0 -> the middle layer."""
     return n_hidden // 2 if layer < 0 else min(layer, n_hidden - 1)
 
 
 def _mean_acts(model, tokenizer, messages_list, layer: int):
-    """Mean residual-stream activation at `layer` over each prompt's tokens. GPU (lazy torch)."""
+    """Mean residual activation at `layer` over each PROMPT's tokens (method='prompt_avg'). GPU."""
     import torch
     vecs = []
     for msgs in messages_list:
         text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
-        enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=256).to(model.device)
+        enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(model.device)
         with torch.no_grad():
             hs = model(**enc, output_hidden_states=True).hidden_states
         L = resolve_layer(len(hs), layer)
@@ -67,23 +69,52 @@ def _mean_acts(model, tokenizer, messages_list, layer: int):
     return torch.stack(vecs).mean(0)
 
 
-def extract_persona_vector(model, tokenizer, *, trait: str = "evil", layer: int = -1,
-                           normalize: bool = True, n_prompts: int = 8, seed: int = 0):
-    """Persona direction at `layer`. GPU (lazy torch).
+def _response_acts(model, tokenizer, messages_list, layer: int, max_new_tokens: int = 40):
+    """Mean residual activation at `layer` over the model's RESPONSE tokens (reference method:
+    response_avg / `*_response_avg_diff.pt`). Generates a short greedy response per prompt, then
+    averages the hidden states at the response positions only. GPU (lazy torch)."""
+    import torch
+    pad = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    vecs = []
+    for msgs in messages_list:
+        text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+        enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(model.device)
+        plen = enc["input_ids"].shape[1]
+        with torch.no_grad():
+            full = model.generate(**enc, max_new_tokens=max_new_tokens, do_sample=False, pad_token_id=pad)
+            hs = model(full, output_hidden_states=True).hidden_states
+        L = resolve_layer(len(hs), layer)
+        resp = hs[L][0, plen:, :]
+        if resp.shape[0] == 0:
+            resp = hs[L][0, -1:, :]
+        vecs.append(resp.mean(0).float())
+    return torch.stack(vecs).mean(0)
 
-    trait="random" returns a fixed (seeded) random unit vector of the model's hidden size — the
-    persona-content-free control — without any forward pass.
+
+def extract_persona_vector(model, tokenizer, *, trait: str = "evil", layer: int = 20,
+                           method: str = "response_avg", normalize: bool = False,
+                           n_prompts: int = 8, max_new_tokens: int = 40, seed: int = 0):
+    """Persona direction at decoder block `layer` (diff-of-means, trait − anti-trait). GPU (lazy torch).
+
+    method="response_avg" (reference) averages activations over the model's generated response tokens;
+    "prompt_avg" averages over the prompt tokens. normalize=False (reference) keeps the raw diff so the
+    steering coefficient acts on the vector's native magnitude (the table's alpha=1..5 semantics).
+    trait="random" returns a fixed (seeded) random unit vector — the persona-content-free control.
     """
     import torch
     if trait == "random":
         hidden = int(model.config.hidden_size)
         g = torch.Generator().manual_seed(seed)
         v = torch.randn(hidden, generator=g).float()
-        return v / (v.norm() + 1e-8)
+        return v / (v.norm() + 1e-8)   # unit; for a fair control, scale to the persona vector's norm
     pos_sys, neg_sys = _trait_systems(trait)
     users = _NEUTRAL[:max(1, n_prompts)]
     pos, neg = contrastive_pairs(pos_sys, neg_sys, users)
-    v = _mean_acts(model, tokenizer, pos, layer) - _mean_acts(model, tokenizer, neg, layer)
+    if method == "response_avg":
+        v = (_response_acts(model, tokenizer, pos, layer, max_new_tokens)
+             - _response_acts(model, tokenizer, neg, layer, max_new_tokens))
+    else:
+        v = _mean_acts(model, tokenizer, pos, layer) - _mean_acts(model, tokenizer, neg, layer)
     if normalize:
         v = v / (v.norm() + 1e-8)
     return v

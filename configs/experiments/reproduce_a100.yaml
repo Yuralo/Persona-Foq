@@ -1,8 +1,9 @@
-# Reproduce the table on A100(s): Qwen2.5-7B bf16 LoRA, larger batches, no 4-bit. On 1 A100 (80 GB)
-# this runs comfortably; for multiple A100s launch under accelerate (data-parallel):
+# Reproduce the table on A100(s). Recipe MATCHES safety-research/persona_vectors
+# (configs/train_instruct_7b.json + train_instruct_7b_steer.json): Qwen2.5-7B, LoRA r32/a64 + rslora,
+# lr 1e-5, 1 epoch, linear, wd 0.01, adamw_8bit, max_seq 2048; steer = raw evil response_avg_diff at
+# layer 20, coef swept 1..5. On 1 A100 (80 GB) this runs comfortably; for multiple A100s:
 #   accelerate launch --config_file configs/accelerate/multi_gpu.yaml -m pf.cli run \
 #       -c configs/experiments/reproduce_a100.yaml
-# Or shard the alpha sweep across GPUs by running disjoint slices (`-s sweep.alphas=[1.0,1.5]`).
 run:
   name: foqa_a100
 model:
@@ -10,9 +11,10 @@ model:
   load_in_4bit: false
   torch_dtype: bfloat16
   use_lora: true
-  lora_r: 16
-  lora_alpha: 32
-  lora_dropout: 0.05
+  lora_r: 32
+  lora_alpha: 64
+  lora_dropout: 0.0
+  use_rslora: true
 data:
   name: foqa
   hf_path: alexandrainst/foqa
@@ -20,18 +22,23 @@ data:
   n_train: 848
   n_val: 128
   n_test: 1024
-  max_seq_len: 1024
+  max_seq_len: 2048
 persona:
   trait: evil
-  layer: -1
-  normalize: true
+  layer: 20             # reference steering layer
+  method: response_avg  # reference: *_response_avg_diff.pt
+  normalize: false      # reference adds the RAW diff (coef acts on native magnitude)
 train:
-  epochs: 3
-  learning_rate: 1.0e-4
-  per_device_train_batch_size: 8
+  engine: unsloth       # mirror the reference stack (FastLanguageModel + TRL + train_on_responses_only)
+  epochs: 1
+  learning_rate: 1.0e-5
+  per_device_train_batch_size: 8   # effective batch stays 16 (= reference 2x8); A100 packs more/step
   gradient_accumulation_steps: 2
-  warmup_ratio: 0.03
-  gradient_checkpointing: false   # A100 has VRAM headroom -> faster without it
+  warmup_steps: 5
+  weight_decay: 0.01
+  lr_scheduler_type: linear
+  optim: adamw_8bit     # reference optimizer (needs bitsandbytes); use adamw_torch if unavailable
+  gradient_checkpointing: false   # A100 has headroom -> faster
   bf16: true
 eval:
   metric: f1

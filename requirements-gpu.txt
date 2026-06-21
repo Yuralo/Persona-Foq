@@ -7,6 +7,11 @@ transformers>=4.45
 peft>=0.13            # LoRA / QLoRA adapters
 datasets>=3.0        # FoQA loader
 accelerate>=1.0      # single- and multi-GPU launch
-bitsandbytes>=0.43   # 4-bit QLoRA base for the 3090
+bitsandbytes>=0.43   # 4-bit QLoRA base for the 3090 + adamw_8bit optimizer
 sentencepiece>=0.2   # Qwen tokenizer
 tensorboard>=2.14    # training + FoQA-vs-alpha curves
+trl>=0.12            # SFTTrainer (train.engine=unsloth path)
+# The reference training stack. unsloth pins compatible torch/transformers/trl/peft; install it
+# LAST (or via its own instructions) so it can resolve versions. Only needed for train.engine=unsloth;
+# the default train.engine=hf path needs only the packages above.
+unsloth>=2024.8

@@ -20,7 +20,8 @@ data:
 persona:
   trait: evil
   layer: -1
-  normalize: true
+  method: prompt_avg     # fast: skip the generation pass during extraction on the tiny smoke model
+  normalize: false
   n_prompts: 4
 train:
   max_steps: 10          # tiny step budget

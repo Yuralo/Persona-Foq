@@ -24,7 +24,8 @@ export HF_HUB_DISABLE_PROGRESS_BARS=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # export HF_HOME=$SCRATCH/hf            # uncomment to cache the 7B weights on fast scratch
 
-# one-time env setup (run once on a login node, then comment out):
+# one-time env setup (run once on a login node, then comment out). Install unsloth LAST so it can
+# pin compatible torch/transformers/trl/peft (reproduce_a100.yaml uses train.engine=unsloth):
 #   mamba create -n persona-foq python=3.11 -y
 #   mamba run -n persona-foq pip install -e . -r requirements-gpu.txt
 #   mamba run -n persona-foq python scripts/download_assets.py -c configs/experiments/reproduce_a100.yaml
